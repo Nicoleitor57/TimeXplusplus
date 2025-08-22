@@ -23,7 +23,7 @@ transformer_default_args = {
     'static': False,
     'd_static': 0,
     'd_pe': 16,
-    'norm_embedding': True,
+    'norm_embedding': True,  
 }
 
 
@@ -123,11 +123,24 @@ class TimeXModel(nn.Module):
             )
             self.d_z = 128
 
+
+
+        # self.encoder_pret = TransformerMVTS(
+        #     d_inp = d_inp,  # Dimension of input from samples (must be constant)
+        #     max_len = max_len, # Max length of any sample to be fed into model
+        #     n_classes = self.n_classes, # Number of classes for classification head
+        #     **self.transformer_args # TODO: change to a different parameter later - leave simple for now
+        # )
+
+        t_args_copy = transformer_args.copy()
+        
+        t_args_copy.pop('d_model', None)
+    
         self.encoder_pret = TransformerMVTS(
-            d_inp = d_inp,  # Dimension of input from samples (must be constant)
-            max_len = max_len, # Max length of any sample to be fed into model
-            n_classes = self.n_classes, # Number of classes for classification head
-            **self.transformer_args # TODO: change to a different parameter later - leave simple for now
+            d_inp = d_inp,
+            max_len = max_len,
+            n_classes = n_classes,
+            **t_args_copy
         )
 
         # For decoder, first value [0] is actual value, [1] is mask value (predicted logit)
@@ -218,25 +231,36 @@ class TimeXModel(nn.Module):
 
         return out_dict
     
+   
     def multivariate_mask(self, src, ste_mask):
-        # First apply mask directly on input:
+        ste_mask_rs = ste_mask.unsqueeze(-1)
+
+        # Asegúrate de que la llamada a _get_baseline se vea así:
         baseline = self._get_baseline(B = src.shape[1])
-        ste_mask_rs = ste_mask.transpose(0,1)
-        if len(ste_mask_rs.shape) == 2:
-            ste_mask_rs = ste_mask_rs.unsqueeze(-1)
+        #baseline = self._get_baseline(src) # Debe pasar 'src', no un número
 
-
-        src_masked_ref = src * ste_mask_rs + (1 - ste_mask_rs) * baseline#self.baseline_net(src)#baseline
-        
-        # src_masked = self.mask_connection_src(torch.stack([src * ste_mask_rs, (1 - ste_mask_rs) * baseline], dim=-1)).squeeze(-1)
-        src_masked = self.mask_connection_src(torch.stack([src, ste_mask_rs], dim=-1)).squeeze(-1)
-
+        src_masked = src * (1 - ste_mask_rs)
+        src_masked_ref = src * ste_mask_rs + (1 - ste_mask_rs) * baseline
         return src_masked, src_masked_ref
     
     def _get_baseline(self, B):
         mu, std = self.masktoken_stats
         samp = torch.stack([torch.normal(mean = mu, std = std) for _ in range(B)], dim = 1)
         return samp
+
+    ##################
+    #se cambia la definicion de _get_baseline
+    # def _get_baseline(self, src): # Acepta el tensor 'src' completo
+    #     mu, std = self.masktoken_stats
+
+    #     # Crea un 'baseline' que coincide perfectamente con la forma de 'src'
+    #     # usando expand() para replicar el promedio a lo largo del batch.
+    #     baseline = torch.normal(
+    #         mean = mu.unsqueeze(0).expand(src.shape[0], -1, -1),
+    #         std = std.unsqueeze(0).expand(src.shape[0], -1, -1)
+    #     )
+    #     return baseline
+    ###########################
 
     def compute_loss(self, output_dict):
         mask_loss = self.loss_weight_dict['gsat'] * self.gsat_loss_fn(output_dict['mask_logits']) + self.loss_weight_dict['connect'] * self.connected_loss(output_dict['mask_logits'])

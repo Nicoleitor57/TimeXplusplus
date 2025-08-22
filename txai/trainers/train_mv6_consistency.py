@@ -55,9 +55,13 @@ def train_mv6_consistency(
         batch_forward_size = None,
         simclr_training = False,
         num_negatives_simclr = 64,
-        max_batch_size_simclr_negs = None,
-        bias_weight = 0.1
+        max_batch_size_simclr_negs = None, 
+        bias_weight = 0.1,
+        
     ):
+
+    device = next(model.parameters()).device
+
     '''
     Args:
         selection_criterion: function w signature f(out, val_tuple)
@@ -84,9 +88,18 @@ def train_mv6_consistency(
         for X, times, y, ids in train_loader: # Need negative sampling here
 
 
+            #################################
+            #codigo nuevo, no parte de la implenatncion orginal
+            X = X.to(device)
+            times = times.to(device)
+            y = y.to(device)
+            ids = ids.to(device)
+            ##################################
+
+
             optimizer.zero_grad()
 
-            # if detect_irreg:
+            # if detect_irreg:s
             #     src_mask = (X < 1e-7)
             #     out_dict = model(X, times, captum_input = True)
 
@@ -154,7 +167,7 @@ def train_mv6_consistency(
         model.eval()
         
         if batch_forward_size is None:
-            f1, out = eval_mv4(val_tuple, model)
+            f1, out = eval_mv4(val_tuple[:3], model)
         else:
             out = batch_forwards(model, val_tuple[0], val_tuple[1], batch_size = 64)
             f1 = 0

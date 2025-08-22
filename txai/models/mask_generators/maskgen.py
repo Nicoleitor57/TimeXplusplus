@@ -20,6 +20,7 @@ class MaskGenerator(nn.Module):
     def __init__(self, 
             d_z, 
             max_len,
+            d_inp,
             d_pe = 16,
             trend_smoother = False,
             agg = 'max',
@@ -41,7 +42,8 @@ class MaskGenerator(nn.Module):
         self.tau = tau
         self.use_ste = use_ste
 
-        self.d_inp = self.d_z - d_pe
+        #self.d_inp = self.d_z - d_pe
+        self.d_inp = d_inp
 
         dec_layer = nn.TransformerDecoderLayer(d_model = d_z, **trans_dec_args) 
         self.mask_decoder = nn.TransformerDecoder(dec_layer, num_layers = n_dec_layers)
@@ -110,8 +112,8 @@ class MaskGenerator(nn.Module):
         return total_mask_reparameterize
 
     def forward(self, z_seq, src, times, get_agg_z = False):
-        x = torch.cat([src, self.pos_encoder(times)], dim = -1) # t bs n
-
+        #x = torch.cat([src, self.pos_encoder(times)], dim = -1) # t bs n
+        x = src
         # x = x.transpose(1,0) ###########
 
 
