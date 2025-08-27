@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from torch.utils.data import TensorDataset, DataLoader
+import torch.nn.functional as F
 from tqdm import tqdm
 import sys
 import os
@@ -64,7 +65,7 @@ class S4Model(nn.Module):
         pooled_output = x.mean(dim=1)
         final_prediction = self.decoder(pooled_output)
         final_prediction = nn.functional.sigmoid(final_prediction)
-        return final_prediction, embedding_secuencia
+        return final_prediction, embedding_secuencia, pooled_output
 
 # -----------------------------------------------------------------------------
 # >> NUESTRO NUEVO MODELO EXPLICADOR A MEDIDA <<
@@ -83,7 +84,8 @@ class S4D_Explainer(nn.Module):
         # Congelamos el S4D para que no se entrene
         self.s4_model.eval()
         with torch.no_grad():
-            prediction, embedding = self.s4_model(x, times)
+            #prediction, embedding = self.s4_model(x, times)
+            prediction, embedding, pooled_embedding = self.s4_model(x, times)
 
         # --- ¡CORRECCIÓN FINAL! ---
         # El MaskGenerator espera los tensores con una forma específica (T, B, d)
@@ -100,12 +102,61 @@ class S4D_Explainer(nn.Module):
         # 'z_seq' (memory) es el embedding de S4D.
         # 'src' (tgt) también debe ser un embedding. Usaremos el mismo.
         mask_tuple = self.mask_generator(z_seq=embedding_T, src=embedding_T, times=times_T)
+
+        # mask_soft, mask_hard, loss_dict = self.mask_generator(
+        #     z_seq=embedding_T, 
+        #     src=embedding_T, # Usamos el embedding como 'src' también
+        #     times=times_T
+        # )
+
         
         # El MaskGenerator devuelve una tupla, la máscara real es el segundo elemento.
         mask = mask_tuple[1]
         
         # Devolvemos todo lo que necesitamos en un diccionario claro
-        return {'prediction': prediction, 'mask': mask}
+        #return {'prediction': prediction, 'mask': mask}
+        return {'prediction': prediction, 'mask': mask, 'pooled_embedding': pooled_embedding}
+        # return {
+        #     'prediction': prediction, 
+        #     'mask': mask_hard, # La máscara binarizada
+        #     'pooled_embedding': pooled_embedding,
+        #     'internal_losses': loss_dict # El diccionario con gsat_loss y connect_loss
+        # }
+
+
+class Poly1BCELoss(nn.Module):
+    """
+    Implementación de Poly1 Loss para problemas de clasificación multi-etiqueta.
+    Combina la fórmula de Poly1 con Binary Cross-Entropy.
+    """
+    def __init__(self, epsilon=2.0, reduction='mean'):
+        super().__init__()
+        self.epsilon = epsilon
+        self.reduction = reduction
+
+    def forward(self, logits, labels):
+        # Usamos BCEWithLogitsLoss por estabilidad numérica.
+        # 'logits' son las salidas de tu modelo ANTES de la función sigmoide.
+        # Tu modelo S4D ya aplica sigmoide, así que lo revertimos con torch.logit
+        # para mayor precisión.
+        if torch.all((logits >= 0) & (logits <= 1)): # Si ya se aplicó sigmoide
+             logits = torch.logit(logits, eps=1e-6)
+
+        bce_loss = F.binary_cross_entropy_with_logits(logits, labels.float(), reduction='none')
+        
+        # p_t es la probabilidad que el modelo asigna a la clase correcta.
+        # Se puede obtener a partir de la pérdida BCE: p_t = exp(-BCE)
+        pt = torch.exp(-bce_loss)
+        
+        # Esta es la modificación de Poly1 que mejora el entrenamiento
+        poly1_loss = bce_loss + self.epsilon * (1 - pt)
+
+        if self.reduction == 'mean':
+            return poly1_loss.mean()
+        elif self.reduction == 'sum':
+            return poly1_loss.sum()
+        else:
+            return poly1_loss
 
 # -----------------------------------------------------------------------------
 # >> BUCLE DE ENTRENAMIENTO SIMPLIFICADO <<
@@ -175,7 +226,10 @@ def train_explainer(explainer, dataloader, optimizer, clf_criterion, device):
         output_original = explainer(x, times)
         prediction_original = output_original['prediction']
         mask_original = output_original['mask']
-        
+        #########  EMBEDDING ORIGINAL  #########
+        embedding_original = output_original['pooled_embedding']
+        #########  FIN EMBEDDING ORIGINAL  #########
+
         # --- Paso 2: Creamos una versión "aumentada" de la entrada ---
         # Añadimos un poco de ruido para crear una señal muy similar
         x_augmented = x + (torch.randn_like(x) * 0.05)
@@ -184,7 +238,8 @@ def train_explainer(explainer, dataloader, optimizer, clf_criterion, device):
         output_augmented = explainer(x_augmented, times)
         prediction_augmented = output_augmented['prediction']
         mask_augmented = output_augmented['mask']
-        
+        embedding_augmented = output_augmented['pooled_embedding']
+
         # --- Cálculo de las 3 Pérdidas ---
         
         # 1. Pérdida de Dispersión (Sparsity Loss) - Queremos que la máscara sea pequeña
@@ -192,7 +247,7 @@ def train_explainer(explainer, dataloader, optimizer, clf_criterion, device):
         
         # 2. Pérdida de Fidelidad (Fidelity Loss) - La predicción no debe cambiar al enmascarar
         signal_masked = x * mask_original
-        prediction_after_masking, _ = explainer.s4_model(signal_masked, times)
+        prediction_after_masking, _, _ = explainer.s4_model(signal_masked, times)
         #fidelity_loss = clf_criterion(prediction_after_masking, prediction_original)
         fidelity_loss = clf_criterion(prediction_after_masking, y)
         
@@ -201,11 +256,15 @@ def train_explainer(explainer, dataloader, optimizer, clf_criterion, device):
         # Consistencia a nivel de etiqueta
         consistency_loss_label = consistency_criterion_label(prediction_original, prediction_augmented)
 
-        mask_original_agg = mask_original.mean(dim=1)
-        mask_augmented_agg = mask_augmented.mean(dim=1)
+
+        ############
+        #mask_original_agg = mask_original.mean(dim=1)
+        #mask_augmented_agg = mask_augmented.mean(dim=1)
+        ############
 
         # Consistencia a nivel de máscara (embedding)
-        consistency_loss_embed = consistency_criterion_embed(mask_augmented_agg, mask_original_agg)
+        #consistency_loss_embed = consistency_criterion_embed(mask_augmented_agg, mask_original_agg)
+        consistency_loss_embed = consistency_criterion_embed(embedding_original, embedding_augmented)
         
         total_consistency_loss = consistency_loss_label + consistency_loss_embed
         
@@ -270,9 +329,10 @@ if __name__ == '__main__':
     # Solo entrenamos los parámetros del MaskGenerator
     optimizer = torch.optim.AdamW(explainer.mask_generator.parameters(), lr=1e-3)
     #clf_criterion = Poly1CrossEntropyLoss(num_classes=n_classes)
-    clf_criterion = nn.BCELoss()
+    #clf_criterion = nn.BCELoss()
+    clf_criterion = Poly1BCELoss(epsilon=2.0)
     
-    epochs = 20 # Empecemos con pocas épocas
+    epochs = 100 # Empecemos con pocas épocas
     for epoch in range(epochs):
         print(f"\n--- Epoch {epoch+1}/{epochs} ---")
         avg_loss = train_explainer(explainer, dataloader, optimizer, clf_criterion, device)
