@@ -250,16 +250,27 @@ class GSATLoss_Extended(nn.Module):
         self.r = r
 
     def forward(self, src, times, smoother_stats, att):
+        # Primer print para verificar las dimensiones de att
+        print(f"Dimensiones de att: {att.shape}")
+
         if torch.any(torch.isnan(att)):
             print('ALERT - att has nans')
             exit()
         if torch.any(att < 0):
             print('ALERT - att less than 0')
             exit()
-        info_loss = (att * torch.log(att/(self.r + 1e-6) + 1e-6) + (1-att) * torch.log((1-att)/(1-self.r+1e-6) + 1e-6)).mean()
+
+        # Aquí la pérdida se calcula sobre la dimensión de la secuencia (última dimensión),
+        # pero se mantiene la dimensión de las etiquetas. Luego se promedia sobre el lote.
+        info_loss_per_label = (att * torch.log(att/(self.r + 1e-6) + 1e-6) + (1-att) * torch.log((1-att)/(1-self.r+1e-6) + 1e-6)).mean(dim=-1)
+        
+        # Ahora promediamos la pérdida por cada etiqueta y por cada elemento del lote.
+        info_loss = info_loss_per_label.mean(dim=[0, 1])
+
         if torch.any(torch.isnan(info_loss)):
             print('INFO LOSS NAN')
             exit()
+
         return info_loss
 
 class ConnectLoss_Extended(nn.Module):
