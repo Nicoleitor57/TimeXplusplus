@@ -103,12 +103,7 @@ class S4D_Explainer(nn.Module):
         # 'src' (tgt) también debe ser un embedding. Usaremos el mismo.
         mask_tuple = self.mask_generator(z_seq=embedding_T, src=embedding_T, times=times_T)
 
-        # mask_soft, mask_hard, loss_dict = self.mask_generator(
-        #     z_seq=embedding_T, 
-        #     src=embedding_T, # Usamos el embedding como 'src' también
-        #     times=times_T
-        # )
-
+        
         
         # El MaskGenerator devuelve una tupla, la máscara real es el segundo elemento.
         mask = mask_tuple[1]
@@ -116,12 +111,7 @@ class S4D_Explainer(nn.Module):
         # Devolvemos todo lo que necesitamos en un diccionario claro
         #return {'prediction': prediction, 'mask': mask}
         return {'prediction': prediction, 'mask': mask, 'pooled_embedding': pooled_embedding}
-        # return {
-        #     'prediction': prediction, 
-        #     'mask': mask_hard, # La máscara binarizada
-        #     'pooled_embedding': pooled_embedding,
-        #     'internal_losses': loss_dict # El diccionario con gsat_loss y connect_loss
-        # }
+        
 
 
 class Poly1BCELoss(nn.Module):
@@ -295,6 +285,8 @@ def train_explainer(explainer, dataloader, optimizer, clf_criterion, device):
         
     return total_loss / len(dataloader)
 
+
+
 # -----------------------------------------------------------------------------
 # >> EJECUCIÓN PRINCIPAL <<
 # -----------------------------------------------------------------------------
@@ -332,7 +324,7 @@ if __name__ == '__main__':
     #clf_criterion = nn.BCELoss()
     clf_criterion = Poly1BCELoss(epsilon=2.0)
     
-    epochs = 100 # Empecemos con pocas épocas
+    epochs = 30 # Empecemos con pocas épocas
     for epoch in range(epochs):
         print(f"\n--- Epoch {epoch+1}/{epochs} ---")
         avg_loss = train_explainer(explainer, dataloader, optimizer, clf_criterion, device)

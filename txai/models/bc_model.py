@@ -143,8 +143,11 @@ class TimeXModel(nn.Module):
             **t_args_copy
         )
 
-        # For decoder, first value [0] is actual value, [1] is mask value (predicted logit)
-        self.mask_generator = MaskGenerator(d_z = (self.d_inp + self.d_pe), d_pe = self.d_pe, max_len = max_len, tau = self.tau, 
+        # # For decoder, first value [0] is actual value, [1] is mask value (predicted logit)
+        # self.mask_generator = MaskGenerator(d_z = (self.d_inp + self.d_pe), d_pe = self.d_pe, max_len = max_len, tau = self.tau, 
+        #     use_ste = self.ablation_parameters.use_ste)
+
+        self.mask_generator = MaskGenerator(d_z = (12), d_inp = self.d_inp, d_pe = self.d_pe, max_len = max_len, tau = self.tau, 
             use_ste = self.ablation_parameters.use_ste)
 
         self.mask_connection_src = MLP([2, 32, 1], activations='elu', dropout=0.0)
