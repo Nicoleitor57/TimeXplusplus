@@ -181,6 +181,14 @@
 
 #     print(f"\n¡ÉXITO! Gráfico de 12 derivaciones guardado como '{output_filename}'!")
 
+import sys
+import os
+import argparse
+
+# Agrega el directorio padre al Python Path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../kardia_s4d/')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import torch, torch.nn as nn, numpy as np, matplotlib.pyplot as plt, sys, os
 from src.models.s4.s4d import S4D
 from Train import dropout_fn
@@ -272,15 +280,38 @@ def generate_visual_explanation(config):
     print(f"-> Gráfico de explicación guardado en '{output_filename}'")
 
 if __name__ == '__main__':
+    
+    parser = argparse.ArgumentParser(description='Genera una explicación visual para un ECG.')
+
+    parser.add_argument('--run_name', type=str, default='resultados',
+                    help='Nombre de la corrida para los resultados.')
+    parser.add_argument('--s4_model_path', type=str, default='../../kardia_s4d/s4_results/S4D/model.pt',
+                        help='Ruta al modelo S4 entrenado.')
+    parser.add_argument('--explainer_path', type=str, default='models/my_s4d_explainer.pt',
+                        help='Ruta al explicador ya entrenado.')
+    parser.add_argument('--ecg_path', type=str, required=True,
+                        help='Ruta al archivo ECG (.dat) para analizar.')
+    parser.add_argument('--num_leads', type=int, default=12,
+                        help='Número de derivaciones del ECG.')
+    parser.add_argument('--sampling_hz', type=int, default=100,
+                        help='Frecuencia de muestreo del ECG.')
+    parser.add_argument('--duration_s', type=int, default=10,
+                        help='Duración del ECG en segundos.')
+
+    args = parser.parse_args()
+
     # Configuración para una corrida manual
-    manual_config = {
-        'run_name': 'manual_viz_run',
-        's4_model_path': '../../S4D-ECG/s4_results/S4D/model.pt',
-        'explainer_path': 'models/baseline_betas/explainer.pt', # Ruta a un explicador ya entrenado
-        'ecg_path': '../../S4D-ECG/exams/19009_lr.dat',
-        'num_leads': 12,
-        'sampling_hz': 100,
-        'duration_s': 10
+    config = {
+        'run_name': args.run_name,
+        's4_model_path': args.s4_model_path,
+        'explainer_path': args.explainer_path, # Ruta a un explicador ya entrenado
+        'ecg_path': args.ecg_path,
+        'num_leads': args.num_leads,
+        'sampling_hz': args.sampling_hz,
+        'duration_s': args.duration_s
     }
-    sys.path.append(manual_config['s4_model_path'].split('/s4_results')[0])
-    generate_visual_explanation(manual_config)
+
+    sys.path.append(config['s4_model_path'].split('/s4_results')[0])
+    #sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), args.s4_model_path.split('/s4_results')[0])))
+    
+    generate_visual_explanation(config)

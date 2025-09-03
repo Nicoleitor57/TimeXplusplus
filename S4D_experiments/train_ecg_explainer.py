@@ -19,8 +19,11 @@ PATH_A_TUS_EMBEDDINGS = '../../S4D-ECG/s4_results/embeddings/ecg_embeddings_test
 
 # Añadimos las rutas necesarias para importar tus clases y las de TimeX++
 sys.path.append(PATH_A_TU_PROYECTO_S4D_ECG)
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
-
+#sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../S4D-ECG')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+print('El directorio de partida es:' ,os.getcwd())
+print('Se buscarán modulos en:', sys.path)
 # Importamos las piezas que necesitamos
 from src.models.s4.s4d import S4D 
 from Train import dropout_fn # Asumiendo que dropout_fn está en tu Train.py
